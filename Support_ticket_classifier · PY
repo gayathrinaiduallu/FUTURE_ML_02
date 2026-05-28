@@ -1,0 +1,211 @@
+"""
+Support Ticket Classification & Prioritization System
+Future Interns – Machine Learning Task 2 (2026)
+
+This script reads the local Kaggle ticket dataset, cleans the text,
+extracts TF-IDF features, trains category and priority classifiers,
+reports metrics, and saves confusion matrix plots.
+"""
+
+import os
+import re
+import warnings
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
+
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+
+warnings.filterwarnings("ignore")
+
+# Download required NLTK data once
+for pkg in ("stopwords", "wordnet", "omw-1.4"):
+    nltk.download(pkg, quiet=True)
+
+CSV_PATH = os.path.join(os.path.dirname(__file__), "customer_support_tickets.csv")
+OUTPUT_IMAGE = os.path.join(os.path.dirname(__file__), "confusion_matrices.png")
+
+# Text cleaning resources
+_STOP_WORDS = set(stopwords.words("english"))
+_LEMMATIZER = WordNetLemmatizer()
+
+CATEGORY_KEYWORDS = {
+    "Billing inquiry":     ["bill", "invoice", "charge", "payment", "price", "cost", "subscription", "plan", "fee", "receipt", "transaction"],
+    "Technical issue":     ["error", "bug", "crash", "broken", "fail", "glitch", "slow", "freeze", "problem", "not working", "network", "install", "login"],
+    "Cancellation request": ["cancel", "cancellation", "terminate", "end", "close", "discontinue", "unsubscribe", "stop"],
+    "Product inquiry":     ["feature", "support", "integrate", "capability", "available", "offer", "product", "specification", "compatible"],
+    "Refund request":      ["refund", "money back", "reimburse", "return", "charged", "double", "incorrect", "overcharged", "dispute"],
+}
+
+PRIORITY_KEYWORDS = {
+    "Critical": ["urgent", "asap", "immediately", "critical", "emergency", "cannot", "broken", "outage", "blocked", "severe"],
+    "High":     ["important", "quickly", "soon", "affecting", "impact", "serious", "significant", "escalate", "priority", "issue"] ,
+    "Medium":   ["when possible", "moderate", "normal", "would like", "help", "question"],
+    "Low":      ["whenever", "minor", "small", "curious", "wondering", "general", "info", "no rush"],
+}
+
+
+def load_data() -> pd.DataFrame:
+    df = pd.read_csv(CSV_PATH)
+    df["ticket_text"] = (
+        df["Ticket Subject"].fillna("") + " " + df["Ticket Description"].fillna("")
+    ).str.strip()
+    df["category"] = df["Ticket Type"]
+    df["priority"] = df["Ticket Priority"]
+    df = df.dropna(subset=["ticket_text", "category", "priority"])
+    df = df[df["ticket_text"].str.strip() != ""].reset_index(drop=True)
+    return df[["ticket_text", "category", "priority"]]
+
+
+def _keyword_tokens(text: str) -> str:
+    text_lower = text.lower()
+    tokens = []
+    for label, keywords in CATEGORY_KEYWORDS.items():
+        tag = "CAT_" + label.replace(" ", "_").upper()
+        for kw in keywords:
+            if kw in text_lower:
+                tokens.append(tag)
+                break
+    for label, keywords in PRIORITY_KEYWORDS.items():
+        tag = "PRI_" + label.upper()
+        for kw in keywords:
+            if kw in text_lower:
+                tokens.append(tag)
+                break
+    return " ".join(tokens)
+
+
+def preprocess(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    original = text
+    text = text.lower()
+    text = re.sub(r"http\S+|www\S+", "", text)
+    text = re.sub(r"\S+@\S+", "", text)
+    text = re.sub(r"\d+", "", text)
+    text = re.sub(r"[^a-z\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    tokens = [
+        _LEMMATIZER.lemmatize(tok)
+        for tok in text.split()
+        if tok not in _STOP_WORDS and len(tok) > 2
+    ]
+    clean = " ".join(tokens)
+    keyword_tags = _keyword_tokens(original)
+    return (clean + " " + keyword_tags).strip()
+
+
+def build_pipeline(classifier) -> Pipeline:
+    return Pipeline([
+        ("tfidf", TfidfVectorizer(
+            ngram_range=(1, 2),
+            min_df=2,
+            sublinear_tf=True,
+            max_features=5000,
+        )),
+        ("clf", classifier),
+    ])
+
+
+def train_and_evaluate(df: pd.DataFrame, target: str):
+    X = df["clean_text"]
+    y = df[target]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.25, random_state=42, stratify=y
+    )
+    classifiers = {
+        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
+        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+        "Naive Bayes": MultinomialNB(),
+    }
+    best_acc = 0.0
+    best_pipe = None
+    best_name = None
+    for name, clf in classifiers.items():
+        pipe = build_pipeline(clf)
+        pipe.fit(X_train, y_train)
+        y_pred = pipe.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        print(f"\n-- {name}")
+        print(f"   Accuracy: {acc:.2%}")
+        print(classification_report(y_test, y_pred, zero_division=0))
+        if acc > best_acc:
+            best_acc = acc
+            best_pipe = pipe
+            best_name = name
+    print(f"\nBest model for {target}: {best_name} (accuracy {best_acc:.2%})")
+    return best_pipe, X_test, y_test, best_name
+
+
+def plot_confusion_matrix(pipe, X_test, y_test, title: str, ax):
+    y_pred = pipe.predict(X_test)
+    labels = sorted(y_test.unique())
+    cm = confusion_matrix(y_test, y_pred, labels=labels)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+    disp.plot(ax=ax, colorbar=False, cmap="Blues")
+    ax.set_title(title, fontsize=11, fontweight="bold", pad=10)
+    ax.tick_params(axis="x", rotation=30)
+
+
+def predict_ticket(text: str, category_pipe, priority_pipe) -> dict:
+    clean = preprocess(text)
+    return {
+        "original": text,
+        "clean": clean,
+        "category": category_pipe.predict([clean])[0],
+        "priority": priority_pipe.predict([clean])[0],
+    }
+
+
+def main():
+    print("[1/4] Loading and preprocessing data")
+    df = load_data()
+    df["clean_text"] = df["ticket_text"].apply(preprocess)
+    print(f"Dataset shape: {df.shape}")
+    print(f"Category counts: {df['category'].value_counts().to_dict()}")
+    print(f"Priority counts: {df['priority'].value_counts().to_dict()}")
+
+    print("[2/4] Training category model")
+    cat_pipe, X_cat_test, y_cat_test, cat_model = train_and_evaluate(df, "category")
+    print("[3/4] Training priority model")
+    pri_pipe, X_pri_test, y_pri_test, pri_model = train_and_evaluate(df, "priority")
+
+    print("[4/4] Saving confusion matrices")
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    plot_confusion_matrix(cat_pipe, X_cat_test, y_cat_test, f"Category classification ({cat_model})", axes[0])
+    plot_confusion_matrix(pri_pipe, X_pri_test, y_pri_test, f"Priority prediction ({pri_model})", axes[1])
+    plt.tight_layout()
+    fig.savefig(OUTPUT_IMAGE, dpi=150, bbox_inches="tight")
+    print(f"Saved confusion matrix image: {OUTPUT_IMAGE}")
+
+    demo_tickets = [
+        "My payment was deducted twice from my bank account.",
+        "The app crashes every time I try to upload a file.",
+        "I need my subscription canceled immediately.",
+        "How do I connect the app to my CRM tool?",
+        "The dashboard shows 500 error after login.",
+    ]
+    print("\nLive prediction examples:")
+    for ticket in demo_tickets:
+        result = predict_ticket(ticket, cat_pipe, pri_pipe)
+        print(f"Ticket: {result['original']}")
+        print(f"  Category: {result['category']}")
+        print(f"  Priority: {result['priority']}\n")
+
+    summary = pd.DataFrame(results := [predict_ticket(t, cat_pipe, pri_pipe) for t in demo_tickets])
+    print(summary[["original", "category", "priority"]].rename(columns={"original": "Ticket Text", "category": "Category", "priority": "Priority"}).to_string(index=False))
+    print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()
