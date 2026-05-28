@@ -160,8 +160,9 @@ On **real organic support tickets** (with natural language), TF-IDF + Logistic R
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/support-ticket-classifier.git
-cd support-ticket-classifier
+git clone https://github.com/gayathrinaiduallu/FUTURE_ML_02.git
+cd FUTURE_ML_02
+
 ```
 
 ### 2. Install dependencies
