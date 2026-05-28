@@ -29,6 +29,8 @@ FUTURE_ML_02/
 ├── Support_ticket_classifier.py   # Main ML pipeline
 ├── customer_support_tickets.csv   # Dataset (Kaggle)
 ├── ticket_ml_dashboard.png        # Visual output dashboard
+├── .gitignore                     # Excludes __pycache__, .pyc, .env, etc.
+├── LICENSE                        # MIT License
 └── README.md                      # This file
 ```
 
