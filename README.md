@@ -1,7 +1,7 @@
 # 🎫 Support Ticket Classification & Prioritization
 ### Future Interns — Machine Learning Task 2 (2026)
 
-![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)
+![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python) 
 ![Scikit-learn](https://img.shields.io/badge/Scikit--learn-ML-orange?style=flat-square&logo=scikit-learn)
 ![NLTK](https://img.shields.io/badge/NLTK-NLP-green?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Completed-brightgreen?style=flat-square)
